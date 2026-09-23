@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from local_env import Limits, LocalEnvironment
+from tests.support.local_env import Limits, LocalEnvironment
 
 
 def tables(size=100):

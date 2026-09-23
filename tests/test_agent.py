@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 
 from agent import Agent, _PlanGuard
-from generate_demo_data import build_demo_data
-from local_env import FILTER_COLUMNS, Limits, LocalEnvironment, SCENARIOS
+from tests.support.generate_demo_data import build_demo_data
+from tests.support.local_env import FILTER_COLUMNS, Limits, LocalEnvironment, SCENARIOS
 
 
 PUBLIC_API = frozenset({
@@ -19,11 +19,15 @@ PUBLIC_API = frozenset({
 class PublicOnlyEnvironment:
     """Fail immediately if Agent asks for an undocumented environment member."""
 
-    def __init__(self, backend):
+    def __init__(self, backend, denied_accesses=None):
         object.__setattr__(self, "backend", backend)
+        object.__setattr__(self, "denied_accesses", denied_accesses)
 
     def __getattribute__(self, name):
         if name not in PUBLIC_API:
+            denied = object.__getattribute__(self, "denied_accesses")
+            if denied is not None:
+                denied.append(name)
             raise AssertionError(f"Agent accessed a non-public environment member: {name}")
         return getattr(object.__getattribute__(self, "backend"), name)
 

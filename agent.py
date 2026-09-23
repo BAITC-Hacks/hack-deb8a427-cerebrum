@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 
-from candidates import candidate_orders, load_history, prepare_tables
+from candidates import candidate_orders, cohort_priority, load_history, prepare_tables
 
 
 @dataclass
@@ -30,13 +30,25 @@ class _Observation:
     total: float = 0.0
     squares: float = 0.0
 
-    def update(self, result):
+    def update(self, result, mean_arpu=1.0):
         count = result["n_customers"]
         if isinstance(count, bool) or not isinstance(count, Integral) or not 10 <= count <= 200:
             raise ValueError("Invalid public pilot size")
         count = int(count)
-        mean = float(result["mean_arpu_uplift"])
-        std = float(result["std_arpu_uplift"])
+        if "observed_lift_ratio" in result:
+            # The public API reports a relative effect, without a sample std.
+            # Use cohort ARPU to compare the estimate with contact costs.
+            # A unit relative std is a conservative uncertainty prior, not a
+            # learned/hidden effect or a claim of calibrated confidence.
+            scale = float(mean_arpu)
+            ratio = float(result["observed_lift_ratio"])
+            if not math.isfinite(scale) or scale < 0:
+                raise ValueError("Invalid public cohort ARPU")
+            mean, std = ratio * scale, scale
+        else:
+            # Independent unit-test environments can report absolute moments.
+            mean = float(result["mean_arpu_uplift"])
+            std = float(result["std_arpu_uplift"])
         if count < 10 or not all(math.isfinite(x) for x in [mean, std]) or std < 0:
             raise ValueError("Invalid public pilot result")
         self.count += count
@@ -83,15 +95,21 @@ class _PlanGuard:
             return None
         mask = np.ones(len(self.profile), dtype=bool)
         for field, column in self.FILTERS.items():
-            value = campaign.get(field, "")
-            if not isinstance(value, str):
-                return None
-            if value == "":
+            value = campaign.get(field)
+            if value is None:
                 continue
-            values = value.split(";")
-            if any(not item for item in values) or not set(values).issubset(set(self.profile[column])):
+            if not isinstance(value, str) or not value:
                 return None
-            mask &= self.profile[column].isin(values).to_numpy()
+            if field == "filter_current_tariff":
+                values = [item.strip() for item in value.split(";")]
+                if any(not item for item in values) or not set(values).issubset(set(self.profile[column].dropna())):
+                    return None
+                selected = self.profile[column].isin(values)
+            else:
+                if value not in set(self.profile[column].dropna()):
+                    return None
+                selected = self.profile[column].eq(value).fillna(False)
+            mask &= selected.to_numpy(dtype=bool)
         return mask
 
     def pilot_ok(self, campaign, size):
@@ -137,26 +155,22 @@ def _cohorts(profile):
 
     def append(filters, indices):
         if 10 <= len(indices) <= 5000:
+            filters = {key: value for key, value in filters.items() if value != ""}
             result.append(_Cohort(filters, np.asarray(indices), float(profile.loc[indices, "predicted_arpu"].mean())))
 
-    for (arpu, data), frame in profile.groupby(["arpu_segment", "data_segment"], sort=True):
-        base = {"filter_arpu_segment": arpu, "filter_data_segment": data}
+    # A tariff transition has a different meaning for different starting
+    # tariffs. Keep those populations separate before spending pilot contacts.
+    for (tariff, arpu), frame in profile.groupby(["current_tariff", "arpu_segment"], sort=True):
+        base = {"filter_current_tariff": tariff, "filter_arpu_segment": arpu}
         if len(frame) <= 5000:
             append(base, frame.index.to_numpy())
             continue
-        names, indices = [], []
-        for tariff, part in frame.groupby("current_tariff", sort=True):
-            if len(indices) + len(part) > 5000 and indices:
-                append({**base, "filter_current_tariff": ";".join(names)}, indices)
-                names, indices = [], []
+        for data, part in frame.groupby("data_segment", sort=True):
             if len(part) > 5000:
                 for call, subset in part.groupby("call_segment", sort=True):
-                    append({**base, "filter_current_tariff": tariff, "filter_call_segment": call}, subset.index.to_numpy())
+                    append({**base, "filter_data_segment": data, "filter_call_segment": call}, subset.index.to_numpy())
             else:
-                names.append(tariff)
-                indices.extend(part.index.tolist())
-        if indices:
-            append({**base, "filter_current_tariff": ";".join(names)}, indices)
+                append({**base, "filter_data_segment": data}, part.index.to_numpy())
     return sorted(result, key=lambda c: -(c.mean_arpu * len(c.indices)))
 
 
@@ -170,7 +184,7 @@ def _fallback_cohorts(profile):
         for values, frame in groups:
             if 10 <= len(frame) <= 5000:
                 values = values if isinstance(values, tuple) else (values,)
-                filters = {f"filter_{column}": value for column, value in zip(selected, values)}
+                filters = {f"filter_{column}": value for column, value in zip(selected, values) if value != ""}
                 cohorts.append(_Cohort(filters, frame.index.to_numpy(), float(frame["predicted_arpu"].mean())))
         if cohorts:
             # Mixing resolutions could produce overlapping final audiences.
@@ -187,7 +201,11 @@ def _fit_audience(profile, cohort, cap, minimal=False):
         pieces = sorted(frame.groupby(["current_tariff", "call_segment"], sort=True), key=lambda item: len(item[1]))
         for (tariff, call), part in pieces:
             if len(part) <= cap:
-                return {**cohort.filters, "filter_current_tariff": tariff, "filter_call_segment": call}, len(part)
+                filters = {**cohort.filters, "filter_current_tariff": tariff, "filter_call_segment": call}
+                return {key: value for key, value in filters.items() if value != ""}, len(part)
+        # Missing optional split keys do not invalidate the tested audience.
+        if len(cohort.indices) <= cap:
+            return dict(cohort.filters), len(cohort.indices)
         return None
     names, count = [], 0
     groups = sorted(frame.groupby("current_tariff", sort=True), key=lambda item: -item[1]["predicted_arpu"].mean())
@@ -196,12 +214,14 @@ def _fit_audience(profile, cohort, cap, minimal=False):
             names.append(tariff)
             count += len(part)
     if names:
-        return {**cohort.filters, "filter_current_tariff": ";".join(names)}, count
+        filters = {**cohort.filters, "filter_current_tariff": ";".join(names)}
+        return {key: value for key, value in filters.items() if value != ""}, count
     # A whole tariff does not fit. A single call segment may still fit.
     for tariff, part in groups:
         for call, subset in part.groupby("call_segment", sort=True):
             if len(subset) <= cap:
-                return {**cohort.filters, "filter_current_tariff": tariff, "filter_call_segment": call}, len(subset)
+                filters = {**cohort.filters, "filter_current_tariff": tariff, "filter_call_segment": call}
+                return {key: value for key, value in filters.items() if value != ""}, len(subset)
     return None
 
 
@@ -214,7 +234,7 @@ class Agent:
         if isinstance(channels, dict):
             for name, details in channels.items():
                 try:
-                    cost = float(details["cost"])
+                    cost = float(details["cost_per_contact"] if "cost_per_contact" in details else details["cost"])
                     if isinstance(name, str) and name and math.isfinite(cost) and cost >= 0:
                         costs[name] = cost
                 except (TypeError, ValueError, KeyError):
@@ -232,7 +252,9 @@ class Agent:
         guard = _PlanGuard(env, profile, tariff_ids, costs)
         if not cohorts:
             raise ValueError("No audience can support the required minimum pilot")
-        target_orders = candidate_orders(profile, tariffs, cohorts, load_history())
+        history = load_history()
+        cohorts = [cohorts[index] for index in cohort_priority(profile, cohorts, history)]
+        target_orders = candidate_orders(profile, tariffs, cohorts, history)
         observations = {}
         attempts = min(20, max(0, int(env.pilots_left)))
         exploration_rounds = min(10, max(1, attempts // 2))
@@ -256,21 +278,22 @@ class Agent:
                     return False
                 if any(key in result and result[key] != value for key, value in pilot.items()):
                     return False
-                if "communication_cost" in result and not math.isclose(
-                    float(result["communication_cost"]), sample * costs[observation.channel], abs_tol=1e-7
+                reported_cost = result.get("cost", result.get("communication_cost"))
+                if reported_cost is not None and not math.isclose(
+                    float(reported_cost), sample * costs[observation.channel], abs_tol=1e-7
                 ):
                     return False
-                observation.update(result)
+                observation.update(result, cohort.mean_arpu)
             except Exception:
                 # Charged failed/malformed responses stay charged in env; reread balances next time.
                 return False
             observations[(observation.cohort, observation.tariff, observation.channel)] = observation
             return True
         # Reserve enough resources for at least one representable final audience.
-        reserve_contacts = min(
+        reserve_contacts = min((
             len(part) for cohort in cohorts
             for _, part in profile.loc[cohort.indices].groupby(["current_tariff", "call_segment"], sort=True)
-        )
+        ), default=min(len(cohort.indices) for cohort in cohorts))
         exploration_budget = max(0.0, min(start_budget * .25, start_budget - reserve_contacts * costs[cheapest]))
         exploration_contacts = min(2000, max(0, start_contacts - reserve_contacts))
 
@@ -301,13 +324,20 @@ class Agent:
                     # Reducing uncertainty is useful only while another sample can change a decision.
                     if previous.error > 0 and previous.count < min(200, size):
                         choices.append((2 * previous.error * size, previous))
-                    other = new_target(previous.cohort)
-                    if other is not None:
-                        choices.append((optimism(previous), other))
                     lower = previous.mean - 2 * previous.error - costs[previous.channel]
+                    # First resolve the uncertainty in an existing hypothesis.
+                    # Otherwise the 20 pilots can all become noisy first tries.
+                    if previous.count >= min(200, size) or lower > 0:
+                        other = new_target(previous.cohort)
+                        if other is not None:
+                            choices.append((optimism(previous), other))
                     for channel in channel_order:
                         key = (previous.cohort, previous.tariff, channel)
                         if key in observations:
+                            continue
+                        # Paid exploration requires confirmed positive evidence;
+                        # a noisy small pilot is not enough to justify its cost.
+                        if lower <= 0 or previous.count < min(80, size):
                             continue
                         # This is a hypothesis for a pilot, not an assumed channel effect.
                         potential = previous.mean + 2 * previous.error - costs[channel]

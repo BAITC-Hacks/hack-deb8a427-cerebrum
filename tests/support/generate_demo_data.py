@@ -1,4 +1,4 @@
-"""Team-created synthetic fixtures, NOT the organizer's participant dataset."""
+"""Independent synthetic unit-test fixtures, never the participant dataset."""
 
 import argparse
 from pathlib import Path

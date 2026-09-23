@@ -9,6 +9,12 @@ __pycache__/
 demo_data/
 synthetic_case/
 
+# Organizer datasets stay local; restore with scripts/import_participant_package.py.
+/customer_profile.csv
+/tariff_dictionary.csv
+/feature_dictionary.csv
+/data/
+
 # Additional local Python environments
 venv/
 env/

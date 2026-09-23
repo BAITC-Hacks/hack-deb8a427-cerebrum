@@ -1,4 +1,4 @@
-"""Unofficial local simulator. Public contract is documented in README.md.
+"""Legacy team simulator retained only for independent unit tests.
 
 The agent must not import this module or access simulator internals. This is a
 testing fixture, not a security sandbox and not the organizer's scoring code.
@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from generate_demo_data import build_demo_data
+from tests.support.generate_demo_data import build_demo_data
 
 
 FILTER_COLUMNS = {
