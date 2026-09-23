@@ -110,7 +110,12 @@ def build_report(args):
         checks.append((status, message))
 
     datasets = {}
-    inputs = sorted(root.rglob("*.csv")) if root.is_dir() else []
+    # The repository contains a generated submission.csv and may contain
+    # ignored demo_data/*.csv. Neither is a participant input dataset.
+    repository_root = (root / "agent.py").is_file() and (root / "make_submission.py").is_file()
+    if repository_root:
+        check("ERROR", "Указан корень репозитория. Передайте отдельную папку с CSV участников.")
+    inputs = sorted(root.rglob("*.csv")) if root.is_dir() and not repository_root else []
     output = args.output.resolve() if args.output else None
     for path in inputs:
         # Ignore Git metadata and refuse to follow links outside the input folder.
