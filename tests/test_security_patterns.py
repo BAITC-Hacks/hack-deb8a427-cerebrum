@@ -1,6 +1,8 @@
 """Static checks for concrete hidden-state access; no environment introspection."""
 
 import ast
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 import unittest
@@ -10,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 HIDDEN_MEMBERS = {"__closure__", "__globals__", "__code__", "gi_frame", "cr_frame", "f_globals", "f_locals"}
 HIDDEN_CALLS = {"gc.get_objects", "gc.get_referrers", "gc.get_referents",
                 "inspect.getclosurevars", "inspect.currentframe", "sys._getframe"}
+PARTICIPANT_SOURCES = frozenset({
+    "agent_template.py", "environment.py", "mock_environment.py",
+    "scoring_core.py", "local_eval.py", "make_submission.py",
+})
 
 
 def forbidden_patterns(source):
@@ -89,6 +95,14 @@ def forbidden_patterns(source):
 
 
 class SecurityPatternTests(unittest.TestCase):
+    def test_participant_sources_match_supplied_package(self):
+        manifest = json.loads((ROOT / "scripts" / "participant_package_manifest.json").read_text(encoding="utf-8"))
+        checksums = manifest["files"]
+        for name in PARTICIPANT_SOURCES:
+            with self.subTest(source=name):
+                self.assertIn(name, checksums)
+                self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), checksums[name])
+
     def test_concrete_bypass_calls_and_aliases_are_rejected(self):
         cases = (
             "import gc as g\nx = g.get_objects()",
@@ -118,6 +132,13 @@ class SecurityPatternTests(unittest.TestCase):
         for raw in sorted(set(result.stdout.split(b"\0")) - {b""}):
             name = raw.decode("utf-8")
             path = ROOT / name
+            if name in PARTICIPANT_SOURCES:
+                # Organizer implementations contain evaluator-only internals.
+                # The separate integrity test requires exact supplied bytes.
+                continue
+            if not path.exists():
+                # A tracked file removed by this change is not executable input.
+                continue
             if path.is_symlink() or not path.resolve().is_relative_to(ROOT):
                 findings.append((name, 0, "unscanned-source-link"))
                 continue

@@ -5,9 +5,9 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from agent import Agent
-from generate_demo_data import build_demo_data
-from local_env import FILTER_COLUMNS, LocalEnvironment, SCENARIOS
+from agent import Agent, _PlanGuard
+from tests.support.generate_demo_data import build_demo_data
+from tests.support.local_env import FILTER_COLUMNS, Limits, LocalEnvironment, SCENARIOS
 
 
 PUBLIC_API = frozenset({
@@ -19,11 +19,15 @@ PUBLIC_API = frozenset({
 class PublicOnlyEnvironment:
     """Fail immediately if Agent asks for an undocumented environment member."""
 
-    def __init__(self, backend):
+    def __init__(self, backend, denied_accesses=None):
         object.__setattr__(self, "backend", backend)
+        object.__setattr__(self, "denied_accesses", denied_accesses)
 
     def __getattribute__(self, name):
         if name not in PUBLIC_API:
+            denied = object.__getattribute__(self, "denied_accesses")
+            if denied is not None:
+                denied.append(name)
             raise AssertionError(f"Agent accessed a non-public environment member: {name}")
         return getattr(object.__getattribute__(self, "backend"), name)
 
@@ -57,6 +61,32 @@ class RewardEnvironment:
         self.remaining_contacts -= n_customers
         self.pilot_history.append({"target_tariff": target_tariff, "channel": channel, **filters, **result})
         return result
+
+
+class PaidOnlyEnvironment(PublicOnlyEnvironment):
+    """Expose only SMS while keeping the real simulator's resource accounting."""
+
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        return {"sms": value["sms"]} if name == "channels" else value
+
+
+class UncertainRewardEnvironment(RewardEnvironment):
+    def run_pilot(self, **kwargs):
+        result = super().run_pilot(**kwargs)
+        result["std_arpu_uplift"] = 50.0
+        self.pilot_history[-1]["std_arpu_uplift"] = 50.0
+        return result
+
+
+class IncompleteView(PublicOnlyEnvironment):
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        if name == "customer_profile":
+            return value.drop(columns=["arpu_segment", "data_segment", "call_segment", "predicted_arpu"])
+        if name == "tariffs":
+            return value.drop(columns=["monthly_fee"])
+        return value
 
 
 def audience(profile, campaign):
@@ -123,6 +153,18 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(len(plan), 1)
         self.assertEqual(len(audience(env.customer_profile, plan[0])), 60)
         self.assertGreater(len(env.pilot_history), 0)
+        self.assertLess(len(env.pilot_history), 20)
+
+    def test_uncertain_good_candidates_receive_larger_confirmation_samples(self):
+        env = UncertainRewardEnvironment("left")
+        plan = Agent().act(PublicOnlyEnvironment(env))
+        samples = [row["n_customers"] for row in env.pilot_history]
+        self.assertEqual(min(samples), 30)
+        self.assertGreater(max(samples), min(samples))
+        self.assertLess(len(samples), 20)
+        self.assertEqual({row["target_tariff"] for row in plan}, {"left"})
+        bad_samples = [row["n_customers"] for row in env.pilot_history if row["target_tariff"] == "right"]
+        self.assertEqual(bad_samples, [30])
 
     def test_fixed_data_and_seed_are_reproducible(self):
         profile, tariffs = build_demo_data(1200, seed=51)
@@ -149,6 +191,97 @@ class AgentTests(unittest.TestCase):
         env.pilots_left = 0
         with self.assertRaisesRegex(RuntimeError, "No successful pilot"):
             Agent().act(PublicOnlyEnvironment(env))
+
+    def test_small_segments_are_combined_for_a_valid_fallback_pilot(self):
+        profile, tariffs = build_demo_data(12)
+        profile["arpu_segment"] = "HIGH"
+        profile["data_segment"] = ["LITE"] * 6 + ["HEAVY"] * 6
+        env = LocalEnvironment(profile, tariffs, seed=18)
+        plan = Agent().act(PublicOnlyEnvironment(env))
+        self.assert_valid_plan(env, plan)
+
+    def test_paid_fallback_reserves_one_representable_final_contact(self):
+        profile, tariffs = build_demo_data(12)
+        profile["arpu_segment"] = "HIGH"
+        profile["data_segment"] = ["LITE"] * 6 + ["HEAVY"] * 6
+        profile["current_tariff"] = "tariff_1"
+        profile["call_segment"] = ["LOW"] + ["HIGH"] * 11
+        # The exploration allowance cannot afford even one SMS pilot.
+        # A fallback can still spend 40 on a pilot and 4 on the final contact.
+        env = LocalEnvironment(profile, tariffs, seed=18, limits=Limits(budget=44, contacts=11))
+        plan = Agent().act(PaidOnlyEnvironment(env))
+        metrics = self.assert_valid_plan(env, plan)
+        self.assertEqual(metrics["pilots_count"], 1)
+        self.assertEqual(metrics["campaign_sizes"], [1])
+        self.assertEqual(metrics["communication_cost"], 44)
+        self.assertEqual(metrics["contacts_used"], 11)
+
+    def test_missing_optional_features_use_unrestricted_filters(self):
+        env = RewardEnvironment("left")
+        plan = Agent().act(IncompleteView(env))
+        self.assertTrue(plan)
+        self.assertGreater(len(env.pilot_history), 0)
+        self.assertTrue(all(len(audience(env.customer_profile, row)) > 0 for row in plan))
+        self.assertEqual({row["target_tariff"] for row in plan}, {"left"})
+
+    def test_transient_pilot_error_and_malformed_charged_response_recover(self):
+        for corruption in ("timeout", "nan", "missing", "wrong_size", "wrong_tariff"):
+            with self.subTest(corruption=corruption):
+                env = RewardEnvironment("left")
+                original = env.run_pilot
+                calls = []
+
+                def unreliable(**kwargs):
+                    calls.append(kwargs)
+                    if len(calls) == 1 and corruption == "timeout":
+                        raise TimeoutError("temporary service failure")
+                    result = original(**kwargs)
+                    if len(calls) == 1:
+                        if corruption == "nan":
+                            result["mean_arpu_uplift"] = float("nan")
+                        elif corruption == "missing":
+                            del result["std_arpu_uplift"]
+                        elif corruption == "wrong_size":
+                            result["n_customers"] += 1
+                        elif corruption == "wrong_tariff":
+                            result["target_tariff"] = "unknown"
+                    return result
+
+                env.run_pilot = unreliable
+                plan = Agent().act(PublicOnlyEnvironment(env))
+                self.assertEqual({row["target_tariff"] for row in plan}, {"left"})
+                self.assertLessEqual(len(calls), 20)
+                self.assertGreaterEqual(env.remaining_contacts, 0)
+
+    def test_permanently_failing_pilot_has_bounded_attempts(self):
+        env = RewardEnvironment("left")
+        calls = []
+
+        def unavailable(**kwargs):
+            calls.append(kwargs)
+            raise ConnectionError("unavailable")
+
+        env.run_pilot = unavailable
+        with self.assertRaisesRegex(RuntimeError, "No successful pilot"):
+            Agent().act(PublicOnlyEnvironment(env))
+        self.assertGreater(len(calls), 0)
+        self.assertLessEqual(len(calls), 20)
+
+    def test_invalid_channel_costs_do_not_disable_usable_channels(self):
+        env = RewardEnvironment("left")
+        env.channels.update({"invalid": {"cost": float("nan")}, "missing": {}, "negative": {"cost": -1}})
+        plan = Agent().act(PublicOnlyEnvironment(env))
+        self.assertEqual({row["channel"] for row in plan}, {"push"})
+
+    def test_final_guard_rejects_duplicate_empty_and_unknown_campaigns(self):
+        env = RewardEnvironment("left")
+        guard = _PlanGuard(env, env.customer_profile, env.tariffs["tariff_id"], {"push": 0})
+        campaign = {"target_tariff": "left", "channel": "push"}
+        self.assertTrue(guard.campaigns_ok([campaign]))
+        self.assertFalse(guard.campaigns_ok([campaign, campaign.copy()]))
+        self.assertFalse(guard.campaigns_ok([]))
+        self.assertFalse(guard.campaigns_ok([{**campaign, "filter_arpu_segment": "missing"}]))
+        self.assertFalse(guard.campaigns_ok([{**campaign, "n_customers": 10}]))
 
 
 if __name__ == "__main__":

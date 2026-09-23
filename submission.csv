@@ -1,4 +1,2 @@
 campaign_name,filter_arpu_segment,filter_data_segment,filter_call_segment,filter_current_tariff,target_tariff,channel
-Pilot-based campaign 1,HIGH,HEAVY,,,tariff_11,digital_ads
-Pilot-based campaign 2,MID,LITE,,,tariff_3,push
-Pilot-based campaign 3,MID,NON_USER,,,tariff_13,push
+Pilot-based campaign 1,LOW,,,tariff_1,tariff_9,push

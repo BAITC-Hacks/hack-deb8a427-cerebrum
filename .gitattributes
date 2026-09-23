@@ -1,0 +1,10 @@
+# Preserve organizer source bytes for the package provenance checks.
+/environment.py -text
+/mock_environment.py -text
+# The supplied scorer ends with a blank line; preserve it exactly.
+/scoring_core.py -text whitespace=-blank-at-eof
+/local_eval.py -text
+/make_submission.py -text
+/agent_template.py -text
+/PARTICIPANT_GUIDE.md -text
+/submission.csv -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

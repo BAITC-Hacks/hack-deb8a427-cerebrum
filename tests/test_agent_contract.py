@@ -6,9 +6,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from local_env import FILTER_COLUMNS, LocalEnvironment
-from generate_demo_data import build_demo_data
-from test_agent import PublicOnlyEnvironment, RewardEnvironment, audience
+from tests.support.local_env import FILTER_COLUMNS, LocalEnvironment
+from tests.support.generate_demo_data import build_demo_data
+from tests.test_agent import PublicOnlyEnvironment, RewardEnvironment, audience
 
 
 ROOT = Path(__file__).resolve().parents[1]
