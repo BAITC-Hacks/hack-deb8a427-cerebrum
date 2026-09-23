@@ -14,6 +14,8 @@ synthetic_case/
 /tariff_dictionary.csv
 /feature_dictionary.csv
 /data/
+/artifacts/
+*.zip
 
 # Additional local Python environments
 venv/

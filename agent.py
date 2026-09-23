@@ -1,17 +1,19 @@
 """Pilot-driven campaign planner using only the documented public env API.
 
-No simulator imports, hidden-state access, external services or fixed effects.
+No simulator imports, hidden-state access or fixed effects.
 The expected public table/result shapes are described in README.md.
 """
 
 from dataclasses import dataclass
 import math
+import os
 from numbers import Integral
 import time
 
 import numpy as np
 
 from candidates import candidate_orders, cohort_priority, load_history, prepare_tables
+from llm_advisor import rank_cohorts
 
 
 @dataclass
@@ -227,6 +229,8 @@ def _fit_audience(profile, cohort, cap, minimal=False):
 
 class Agent:
     def act(self, env):
+        self.trace = []
+        self.llm_status = "disabled"
         deadline = time.monotonic() + 540.0
         profile, tariffs = prepare_tables(env.customer_profile, env.tariffs)
         channels = env.channels
@@ -242,6 +246,14 @@ class Agent:
         if not costs:
             raise ValueError("No public channel with a finite nonnegative cost")
         channel_order = sorted(costs, key=lambda name: (costs[name], name))
+        multipliers = {}
+        for name in channel_order:
+            try:
+                value = float(channels[name]["conversion_multiplier"])
+                if math.isfinite(value) and value > 0:
+                    multipliers[name] = value
+            except (TypeError, ValueError, KeyError):
+                pass
         cheapest = channel_order[0]
         cohorts = _cohorts(profile)
         if not cohorts:
@@ -255,6 +267,20 @@ class Agent:
         history = load_history()
         cohorts = [cohorts[index] for index in cohort_priority(profile, cohorts, history)]
         target_orders = candidate_orders(profile, tariffs, cohorts, history)
+        # The LLM sees aggregate public hypotheses, never rows, IDs or env.
+        # It can reorder exploration, but cannot authorize a final campaign.
+        if os.environ.get("CEREBRUM_LLM") == "1":
+            prices = tariffs.set_index("tariff_id")["monthly_fee"].to_dict()
+            shortlist = [{"id": i, "filters": cohort.filters,
+                          "audience_size": len(cohort.indices), "mean_arpu": cohort.mean_arpu,
+                          "target_options": [{"tariff": name, "price": float(prices[name])}
+                                             for name in target_orders[i]]}
+                         for i, cohort in enumerate(cohorts[:20])]
+            order, self.llm_status = rank_cohorts(
+                shortlist, enabled=True, timeout=max(0.0, min(8.0, deadline - time.monotonic())))
+            order += list(range(len(shortlist), len(cohorts)))
+            cohorts = [cohorts[i] for i in order]
+            target_orders = [target_orders[i] for i in order]
         observations = {}
         attempts = min(20, max(0, int(env.pilots_left)))
         exploration_rounds = min(10, max(1, attempts // 2))
@@ -272,6 +298,8 @@ class Agent:
             if not guard.pilot_ok(pilot, sample):
                 return False
             calls_left -= 1  # Bound failed attempts too, even when the service does not charge them.
+            phase = "confirmation" if observation.count else (
+                "channel_comparison" if observation.channel != cheapest else "exploration")
             try:
                 result = env.run_pilot(n_customers=sample, **pilot)
                 if not isinstance(result, dict) or result.get("n_customers") != sample:
@@ -288,6 +316,12 @@ class Agent:
                 # Charged failed/malformed responses stay charged in env; reread balances next time.
                 return False
             observations[(observation.cohort, observation.tariff, observation.channel)] = observation
+            self.trace.append({"phase": phase, "target_tariff": observation.tariff,
+                               "channel": observation.channel, "sample": sample,
+                               "observed_customers": observation.count,
+                               "mean_gain": observation.mean, "standard_error": observation.error,
+                               "lower_net_per_contact": observation.mean - 2 * observation.error - costs[observation.channel],
+                               "filters": dict(cohort.filters)})
             return True
         # Reserve enough resources for at least one representable final audience.
         reserve_contacts = min((
@@ -340,7 +374,11 @@ class Agent:
                         if lower <= 0 or previous.count < min(80, size):
                             continue
                         # This is a hypothesis for a pilot, not an assumed channel effect.
-                        potential = previous.mean + 2 * previous.error - costs[channel]
+                        # Published multipliers rank experiments, never replace
+                        # measured evidence for a paid final campaign.
+                        scale = (multipliers[channel] / multipliers[previous.channel]
+                                 if channel in multipliers and previous.channel in multipliers else 1.0)
+                        potential = scale * (previous.mean + 2 * previous.error) - costs[channel]
                         value = size * (potential - max(0.0, lower))
                         if potential > 0 and value > 30 * costs[channel]:
                             choices.append((value, _Observation(*key)))

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cerebrum — тарифные кампании</title>
+<style>
+:root{--ink:#1c222a;--muted:#6c737e;--line:#e5e7eb;--yellow:#ffda45;--green:#167750;--red:#b02e36;--bg:#f5f6f8}*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}button,select,input{font:inherit}button,a,select,input{outline-offset:4px}header{background:#171c24;color:white;padding:22px max(28px,calc((100vw - 1220px)/2));display:flex;justify-content:space-between;align-items:center;gap:20px}.brand{font-weight:800;font-size:23px;letter-spacing:-.8px}.brand span{color:var(--yellow)}.header-note{color:#c3c8d1;font-size:13px}main{max-width:1280px;margin:0 auto;padding:32px 30px 48px}h1{font-size:32px;letter-spacing:-1px;margin:0 0 8px}h2{font-size:20px;margin:0}p{margin:7px 0 20px;color:var(--muted)}.lead{max-width:900px}.controls,.panel,.metric{background:#fff;border:1px solid var(--line);border-radius:14px}.controls{padding:20px;display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-top:24px}label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;flex:1;min-width:170px}select,input{border:1px solid #ccd0d7;border-radius:8px;background:#fff;padding:10px 12px;color:var(--ink);width:100%;height:44px}label.seed{flex:0 1 115px;min-width:100px}button.primary{border:0;border-radius:8px;padding:12px 24px;background:var(--yellow);font-weight:700;height:44px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.status{display:flex;gap:10px;align-items:center;min-height:48px;font-size:13px;color:var(--muted)}.badge{background:#e8f5ef;color:var(--green);border-radius:20px;padding:4px 11px;font-weight:700;font-size:12px}.badge.partial{background:#fff3d1;color:#805d09}.badge.blocked{background:#fbe9ea;color:var(--red)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:26px}.metric{padding:19px 20px}.metric .label{font-size:13px;color:var(--muted)}.metric strong{display:block;font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.7px;margin:6px 0}.metric small{color:var(--muted)}progress{height:6px;width:100%;accent-color:#c8a224;display:block;margin-top:13px}.good{color:var(--green)}.negative{color:var(--red)}.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}.tab{border:0;background:transparent;padding:13px 18px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:3px solid transparent}.tab[aria-selected=true]{border-color:#dcb31f;color:var(--ink)}.panel{padding:22px;margin-bottom:20px}.panel-title{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-bottom:18px}.download{color:var(--ink);font-size:13px;text-decoration:none;border:1px solid #cdd2d8;border-radius:8px;padding:9px 14px;background:#fff}.download[aria-disabled=true]{pointer-events:none;opacity:.4}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--muted);font-weight:600;background:#f8f9fa;white-space:nowrap}td,th{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}td:last-child{max-width:360px}tbody tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}.subtle{font-size:13px;color:var(--muted)}.callout{background:#fff8dc;border-left:3px solid #dcb31f;padding:14px 18px;margin-bottom:20px;color:#665326;font-size:14px}.errors{color:var(--red);font-weight:600}.empty{padding:30px;color:var(--muted)}[hidden]{display:none!important}footer{font-size:12px;color:var(--muted);margin-top:22px}.spinner{width:15px;height:15px;border:2px solid #ddd;border-top-color:#333;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}header{padding:20px}.header-note{max-width:220px;text-align:right}main{padding:24px 18px}.controls{gap:12px}}@media(max-width:550px){h1{font-size:27px}.metrics{gap:10px}.metric{padding:15px}.metric strong{font-size:21px}.header-note{display:none}.tabs{overflow:auto}.tab{padding:12px;white-space:nowrap}.panel{padding:14px}.panel-title{align-items:flex-start;flex-direction:column}.primary{width:100%}}
+</style>
+</head>
+<body>
+<header><div class="brand">Cerebrum<span> /</span></div><div class="header-note">Демонстрация для жюри · HackAlem AI</div></header>
+<main>
+<h1>План тарифных кампаний</h1>
+<p class="lead">Агент исследует аудиторию через пилоты и выбирает тарифы, каналы и сегменты в пределах бюджета. Здесь можно запустить его и посмотреть результат.</p>
+<div class="callout">Официальный пакет участников: синтетические данные и мок-эффекты организаторов. Результат на скрытых судейских данных может отличаться.</div>
+<form class="controls" id="run-form">
+<label>Данные<input value="Официальный пакет участников" readonly></label>
+<label>Среда<input value="Мок-эффекты организаторов" readonly></label>
+<label class="seed">Seed<input id="seed" type="number" min="0" max="1000000" value="42" required></label>
+<button class="primary" id="run-button" type="submit">Запустить агента</button>
+</form>
+<div class="status" id="status" role="status" aria-live="polite">Загрузка результата…</div>
+<div class="metrics" id="metrics">
+<div class="metric"><div class="label">Чистый прирост ARPU</div><strong id="gain">—</strong><small>после расходов · у.е.</small></div>
+<div class="metric"><div class="label">Расход бюджета</div><strong id="budget">—</strong><small>из 100 000 у.е.</small><progress id="budget-bar" max="100000" value="0"></progress></div>
+<div class="metric"><div class="label">Использовано контактов</div><strong id="contacts">—</strong><small>из 15 000 · включая пилоты</small><progress id="contacts-bar" max="15000" value="0"></progress></div>
+<div class="metric"><div class="label">Проведено пилотов</div><strong id="pilots">—</strong><small id="campaign-count">до 20 пилотов · до 10 кампаний</small><progress id="pilots-bar" max="20" value="0"></progress></div>
+</div>
+<nav class="tabs" role="tablist" aria-label="Результаты">
+<button class="tab" role="tab" id="tab-campaigns" aria-controls="campaigns" aria-selected="true">Кампании</button>
+<button class="tab" role="tab" id="tab-pilots" aria-controls="pilot-list" aria-selected="false">История пилотов</button>
+<button class="tab" role="tab" id="tab-decisions" aria-controls="decisions" aria-selected="false">Решения агента</button>
+<button class="tab" role="tab" id="tab-validation" aria-controls="validation" aria-selected="false">Соответствие ТЗ</button>
+</nav>
+<section class="panel" id="campaigns" role="tabpanel" aria-labelledby="tab-campaigns">
+<div class="panel-title"><h2>Финальный план</h2><a class="download" id="download" href="/api/submission" aria-disabled="true">Скачать submission.csv</a></div>
+<p class="subtle" id="plan-note">Размеры кампаний и фильтры появятся после запуска.</p>
+<div class="scroll"><table><thead><tr><th>Кампания</th><th>Целевой тариф</th><th>Канал</th><th class="num">Аудитория</th><th>Фильтры</th></tr></thead><tbody id="campaign-rows"></tbody></table></div>
+</section>
+<section class="panel" id="pilot-list" role="tabpanel" aria-labelledby="tab-pilots" hidden>
+<div class="panel-title"><h2>История пилотов</h2></div><p class="subtle">Шумные наблюдения официальной среды, доступные агенту. Это оценки эффекта, а не фактическая прибыль. Пилоты включены в общий результат и расход лимитов.</p>
+<div class="scroll"><table><thead><tr><th>Пилот</th><th>Тариф / канал</th><th class="num">Контактов</th><th class="num">Оценка прироста, %</th><th class="num">Расход</th><th class="num">Оценка эффекта</th><th>Фильтры</th></tr></thead><tbody id="pilot-rows"></tbody></table></div>
+</section>
+<section id="validation" role="tabpanel" aria-labelledby="tab-validation" hidden>
+<div class="panel"><h2>Проверка по предоставленному ТЗ</h2><p id="validation-summary">Загрузка…</p><p>Каждый запуск проверяет 1–10 кампаний, существующие тарифы и каналы, размеры аудиторий, до 20 пилотов по 10–200 клиентов, общий бюджет и контакты. Итог считает официальный evaluator.</p><p>Для воспроизводимой серии и официального экспорта выполните <code>python run.py --check</code>. Отчёт относится к версии алгоритма, на которой он был получен.</p></div>
+<div class="panel"><h2>Серия из 10 прогонов</h2><p class="subtle">Сохранённые результаты официального evaluator для seed 0–9. Таблица заполняется после проверки. Значения округлены до целых.</p><div class="scroll"><table><thead><tr><th>Среда</th><th>Успешных</th><th>Прибыльных</th><th class="num">Медианный прирост</th><th class="num">Минимальный прирост</th></tr></thead><tbody id="batch-rows"></tbody></table></div></div>
+</section>
+<section class="panel" id="decisions" role="tabpanel" aria-labelledby="tab-decisions" hidden>
+<div class="panel-title"><h2>Как агент выбирал кампании</h2></div>
+<p id="llm-note" class="subtle"></p>
+<p class="subtle">Оценки основаны на результатах пилотов. Нижняя оценка = средний прирост − 2 × стандартная ошибка − цена контакта. Неопределённость эвристическая, а не калиброванный доверительный интервал.</p>
+<div class="scroll"><table><thead><tr><th>Шаг</th><th>Решение</th><th>Тариф / канал</th><th class="num">Выборка</th><th class="num">Средний прирост на контакт</th><th class="num">Стандартная ошибка</th><th class="num">Нижняя оценка</th></tr></thead><tbody id="decision-rows"></tbody></table></div>
+</section>
+<footer>Все суммы — условные единицы. Данные не описывают реальный бизнес Beeline. Каждый запуск создаёт новую среду.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const number=(n,digits=0)=>Number(n).toLocaleString('ru-RU',{maximumFractionDigits:digits});
+const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+const filterNames={filter_arpu_segment:'ARPU',filter_data_segment:'Данные',filter_call_segment:'Звонки',filter_current_tariff:'Текущий тариф'};
+const phases={exploration:'Разведка',confirmation:'Уточнение оценки',channel_comparison:'Сравнение канала'};
+const llmStates={disabled:'Локальное ранжирование. LLM включается флагом --llm при запуске.',no_key:'API-ключ отсутствует: применено локальное ранжирование.',applied:'LLM выбрала порядок гипотез по агрегатам сегментов. Финальный план подтверждён пилотами.',fallback:'Ответ LLM недоступен или некорректен: применено локальное ранжирование.',timeout:'LLM не ответила вовремя: применено локальное ранжирование.',no_time:'Недостаточно времени для LLM: применено локальное ранжирование.'};
+function filters(item){return Object.entries(filterNames).filter(([key])=>item[key]).map(([key,label])=>label+': '+item[key]).join(' · ')||'Вся аудитория';}
+function cell(row,text,cls){row.append(node('td',text,cls));}
+function renderReport(report){
+ if(!report){$('status').textContent='Укажите seed и запустите агента.';return;}
+ $('campaign-rows').replaceChildren();$('pilot-rows').replaceChildren();$('decision-rows').replaceChildren();$('llm-note').textContent='';
+ if(!report.ok){$('status').replaceChildren(node('span',report.error||'Запуск завершился ошибкой','errors'));$('download').setAttribute('aria-disabled','true');for(const id of ['gain','budget','contacts','pilots'])$(id).textContent='—';for(const id of ['budget-bar','contacts-bar','pilots-bar'])$(id).value=0;$('campaign-count').textContent='План не сформирован';$('plan-note').textContent='Результат недоступен. Попробуйте запустить агента ещё раз.';return;}
+ const m=report.metrics;
+ $('seed').value=report.seed;
+ $('status').replaceChildren(node('span','Лимиты соблюдены','badge'),node('span',report.score_status,report.score_status==='PASS'?'badge':'badge partial'),node('span',`Официальная среда · версия ${report.version} · seed ${report.seed} · ${number(report.agent_seconds,2)} с`));
+ $('gain').textContent=(m.net_gain>0?'+':'')+number(m.net_gain,2);$('gain').className=m.net_gain>=0?'good':'negative';
+ $('budget').textContent=number(m.communication_cost);$('contacts').textContent=number(m.contacts_used);$('pilots').textContent=m.pilots_count+' / 20';
+ $('campaign-count').textContent='Кампаний в плане: '+m.campaigns_count;$('budget-bar').value=m.communication_cost;$('contacts-bar').value=m.contacts_used;$('pilots-bar').value=m.pilots_count;
+ $('plan-note').textContent=`Уникальных абонентов: ${number(m.unique_customers)}. Базовый ARPU: ${number(m.baseline_arpu,2)}. Итог с расходами: ${number(m.total_arpu_after_costs,2)}.`;
+ report.campaigns.forEach((c,i)=>{const tr=node('tr');cell(tr,c.campaign_name||'Кампания '+(i+1));cell(tr,c.target_tariff);cell(tr,c.channel);cell(tr,number(m.campaign_sizes[i]),'num');cell(tr,filters(c));$('campaign-rows').append(tr);});
+ report.pilot_history.forEach(p=>{const tr=node('tr');cell(tr,p.pilot);cell(tr,p.target_tariff+' / '+p.channel);cell(tr,p.n_customers,'num');cell(tr,number(p.observed_lift_ratio*100,2),'num');cell(tr,number(p.cost,2),'num');cell(tr,number(p.observed_lift_total,2),'num '+(p.observed_lift_total<0?'negative':'good'));cell(tr,filters(p));$('pilot-rows').append(tr);});
+ $('llm-note').textContent=llmStates[report.llm_status]||'Локальное ранжирование';
+ report.decisions.forEach((d,i)=>{const tr=node('tr');cell(tr,i+1);cell(tr,phases[d.phase]||d.phase);cell(tr,d.target_tariff+' / '+d.channel);cell(tr,d.sample,'num');cell(tr,number(d.mean_gain,2),'num');cell(tr,number(d.standard_error,2),'num');cell(tr,number(d.lower_net_per_contact,2),'num');$('decision-rows').append(tr);});
+ $('download').textContent=report.seed===42&&report.llm_status!=='applied'?'Скачать submission.csv':`Скачать план seed ${report.seed}.csv`;
+ $('download').setAttribute('aria-disabled','false');
+}
+async function getJSON(url,options){const res=await fetch(url,options);const data=await res.json();if(!res.ok)throw new Error(data.error||'Ошибка сервера');return data;}
+document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>{const selected=t===tab;t.setAttribute('aria-selected',selected);$(t.getAttribute('aria-controls')).hidden=!selected;});}));
+$('run-form').addEventListener('submit',async event=>{event.preventDefault();$('run-button').disabled=true;$('download').setAttribute('aria-disabled','true');$('status').replaceChildren(node('span',undefined,'spinner'),node('span','Агент проводит пилоты и выбирает кампании…'));try{const data=await getJSON('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({seed:Number($('seed').value)})});renderReport(data.report);}catch(error){renderReport({ok:false,error:error.message});}finally{$('run-button').disabled=false;}});
+getJSON('/api/latest').then(data=>renderReport(data.report)).catch(error=>{$('status').textContent=error.message;});
+getJSON('/api/validation').then(data=>{const b=data.report;$('validation-summary').textContent=!b?'Серия проверок ещё не запускалась.':data.current?'Серия seed 0–9 проверена на текущей версии алгоритма. Режим: без LLM.':'Алгоритм изменился после проверки: запустите серию заново. Ниже сохранён предыдущий результат.';if(b){const row=node('tr');cell(row,'Официальная среда · '+b.version);cell(row,b.valid+'/'+b.runs);cell(row,b.positive+'/'+b.runs);cell(row,number(b.median_gain),'num');cell(row,number(b.min_gain),'num');$('batch-rows').append(row);}}).catch(error=>{$('validation-summary').textContent=error.message;});
+</script>
+</body>
+</html>
