@@ -7,3 +7,38 @@ __pycache__/
 .pytest_cache/
 .codebase-memory/
 demo_data/
+
+# Additional local Python environments
+venv/
+env/
+ENV/
+
+# Logs and temporary test results
+*.log
+logs/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+test-results/
+.tox/
+.nox/
+
+# Local IDE settings
+.idea/
+.vscode/
+*.suo
+*.user
+*.swp
+
+# Local credentials and private keys
+.credentials/
+credentials.json
+credentials.local.*
+service-account*.json
+*.key
+*.private.pem
+id_rsa
+id_ed25519
+.aws/
+.ssh/
