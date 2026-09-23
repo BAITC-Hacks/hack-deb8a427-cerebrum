@@ -17,6 +17,13 @@
 
 ## Агент и проверки
 
+- [ ] `python run.py --check` прошёл; `artifacts/validation.json` относится
+  к текущей версии. Экспорт проверен без LLM.
+- [ ] `start.cmd` или `python run.py` открывает панель из чистой копии проекта.
+- [ ] В сдачу включён `llm_advisor.py` вместе с `agent.py` и `candidates.py`.
+- [ ] Если заявлена работа с живой LLM, отдельно проверены API-ключ и модель;
+  автоматические тесты транспорта не выдаются за живой API-прогон.
+
 - [ ] `python scripts/preflight.py` прошёл.
 - [ ] `python -m unittest discover -s tests -v` прошёл.
 - [ ] В текстовом отчёте `python local_eval.py` нет `FAIL` и отброшенных кампаний:
